@@ -1,0 +1,25 @@
+{
+  "name": "context-profiler",
+  "version": "0.1.0",
+  "description": "Live context profiler dashboard for Claude Code and Codex sessions.",
+  "author": {
+    "name": "sohit"
+  },
+  "target": "codex",
+  "interface": {
+    "displayName": "Context Profiler",
+    "shortDescription": "Inspect context growth, spikes, tools, agents, skills, and files.",
+    "longDescription": "Imports Codex rollout transcripts and Claude hook events into a shared profile store, then renders a live Textual dashboard and CLI summaries.",
+    "developerName": "sohit",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Run /context-profiler status",
+      "Run /context-profiler setup",
+      "Run /context-profiler watch"
+    ],
+    "brandColor": "#0F766E"
+  }
+}
