@@ -1,0 +1,10 @@
+{
+  "name": "context-profiler",
+  "version": "0.1.0",
+  "description": "Live context profiler dashboard for Claude Code and Codex sessions.",
+  "author": {
+    "name": "sohit"
+  },
+  "target": "claude",
+  "commands": "./commands/"
+}

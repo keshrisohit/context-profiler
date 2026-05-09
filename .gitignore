@@ -1,0 +1,15 @@
+# Python/runtime artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Local OS/log/cache files
+.DS_Store
+*.log
+*.tmp
+.session-index.json
+.import-cursors.json
