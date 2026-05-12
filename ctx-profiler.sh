@@ -6,6 +6,8 @@ PLUGIN_DIR="${CTX_PROFILER_DIR:-$SCRIPT_DIR}"
 PROFILE_DIR="$HOME/.claude/context-profiles"
 CONFIG="$PROFILE_DIR/config.json"
 ANALYZE="$PLUGIN_DIR/analyze.sh"
+TEXTUAL_VENV="${CTX_PROFILER_TEXTUAL_VENV:-$PROFILE_DIR/textual-venv}"
+TEXTUAL_PYTHON="$TEXTUAL_VENV/bin/python"
 
 usage() {
   cat <<'EOF'
@@ -48,19 +50,41 @@ PY
 }
 
 ensure_textual() {
+  if textual_python >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ "${1:-}" == "--install-textual" ]]; then
+    mkdir -p "$PROFILE_DIR"
+    if [[ ! -x "$TEXTUAL_PYTHON" ]]; then
+      python3 -m venv "$TEXTUAL_VENV"
+    fi
+    "$TEXTUAL_PYTHON" -m pip install --upgrade pip textual
+    "$TEXTUAL_PYTHON" - <<'PY' >/dev/null
+import textual
+PY
+    return 0
+  fi
+  echo "textual is not installed. Run:"
+  echo "  $0 setup --install-textual"
+  return 1
+}
+
+textual_python() {
   if python3 - <<'PY' >/dev/null 2>&1
 import textual
 PY
   then
+    echo "python3"
     return 0
   fi
-  if [[ "${1:-}" == "--install-textual" ]]; then
-    python3 -m pip install --user textual
-  else
-    echo "textual is not installed. Run:"
-    echo "  $0 setup --install-textual"
-    return 1
+  if [[ -x "$TEXTUAL_PYTHON" ]] && "$TEXTUAL_PYTHON" - <<'PY' >/dev/null 2>&1
+import textual
+PY
+  then
+    echo "$TEXTUAL_PYTHON"
+    return 0
   fi
+  return 1
 }
 
 install_claude_hooks() {
@@ -168,19 +192,20 @@ EOF
 }
 
 doctor() {
+  local textual_status="missing"
+  local textual_runtime=""
+  if textual_runtime="$(textual_python 2>/dev/null)"; then
+    textual_status="ok ($textual_runtime)"
+  fi
   echo "Plugin: $PLUGIN_DIR"
   test -x "$ANALYZE" && echo "analyze.sh: ok" || echo "analyze.sh: missing/not executable"
   test -f "$CONFIG" && echo "config: $CONFIG" || echo "config: missing"
-  python3 - "$PLUGIN_DIR" <<'PY'
+  CTX_PROFILER_TEXTUAL_STATUS="$textual_status" python3 - "$PLUGIN_DIR" <<'PY'
+import os
 import sys
 sys.path.insert(0, sys.argv[1])
-try:
-    import textual
-    textual_status = "ok"
-except Exception:
-    textual_status = "missing"
 from context_profiler_core import latest_codex_transcripts, load_config
-print(f"textual: {textual_status}")
+print(f"textual: {os.environ['CTX_PROFILER_TEXTUAL_STATUS']}")
 print(f"enabled: {load_config().get('enabled', True)}")
 print(f"codex transcripts found: {len(latest_codex_transcripts(20))}")
 PY
@@ -200,7 +225,11 @@ case "$cmd" in
       install_textual="--install-textual"
     fi
     ensure_config
-    ensure_textual "$install_textual" || true
+    if [[ -n "$install_textual" ]]; then
+      ensure_textual "$install_textual"
+    else
+      ensure_textual || true
+    fi
     echo "Claude settings:"
     install_claude_hooks
     echo "Commands:"

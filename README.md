@@ -20,6 +20,9 @@ If Textual is missing:
 bash ./ctx-profiler.sh setup --install-textual
 ```
 
+This installs Textual into a small profiler-managed virtual environment under
+the profiler config directory when it is not already available to `python3`.
+
 The setup command is idempotent. It installs:
 
 - Claude hook entries in `~/.claude/settings.json`

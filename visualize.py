@@ -39,10 +39,66 @@ from context_profiler_core import (
 
 # ── textual app ───────────────────────────────────────────────────────────────
 
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, TabbedContent, TabPane, DataTable, Static, RichLog, Input
-from textual.binding import Binding
-from textual.reactive import reactive
+try:
+    from textual.app import App, ComposeResult
+    from textual.widgets import Header, Footer, TabbedContent, TabPane, DataTable, Static, RichLog, Input
+    from textual.binding import Binding
+    from textual.reactive import reactive
+    TEXTUAL_AVAILABLE = True
+except ImportError:
+    TEXTUAL_AVAILABLE = False
+
+    class App:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("textual is not installed")
+
+    ComposeResult = object
+
+    class Binding:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class reactive:
+        def __init__(self, default=None):
+            self.default = default
+
+        @classmethod
+        def __class_getitem__(cls, item):
+            return cls
+
+        def __set_name__(self, owner, name):
+            self.name = name
+
+        def __get__(self, instance, owner):
+            if instance is None:
+                return self
+            return instance.__dict__.get(self.name, self.default)
+
+        def __set__(self, instance, value):
+            instance.__dict__[self.name] = value
+
+    class _MissingWidget:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    Header = Footer = TabPane = DataTable = Static = RichLog = _MissingWidget
+
+    class TabbedContent(_MissingWidget):
+        class TabActivated:
+            pass
+
+    class Input(_MissingWidget):
+        class Changed:
+            pass
+
+        class Submitted:
+            pass
 
 
 def format_duration(seconds):
@@ -1267,10 +1323,8 @@ class ContextProfilerApp(App):
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    try:
-        import textual  # noqa
-    except ImportError:
-        print("ERROR: textual not installed.\nRun: pip install textual")
+    if not TEXTUAL_AVAILABLE:
+        print("ERROR: textual is not installed.\nRun: ctx-profile setup --install-textual")
         sys.exit(1)
 
     import argparse

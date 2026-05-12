@@ -18,6 +18,26 @@
 PLUGIN_DIR="${CTX_PROFILER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 PROFILE_DIR="$HOME/.claude/context-profiles"
 CONFIG="$PROFILE_DIR/config.json"
+TEXTUAL_VENV="${CTX_PROFILER_TEXTUAL_VENV:-$PROFILE_DIR/textual-venv}"
+TEXTUAL_PYTHON="$TEXTUAL_VENV/bin/python"
+
+textual_python() {
+  if python3 - <<'PY' >/dev/null 2>&1
+import textual
+PY
+  then
+    echo "python3"
+    return 0
+  fi
+  if [[ -x "$TEXTUAL_PYTHON" ]] && "$TEXTUAL_PYTHON" - <<'PY' >/dev/null 2>&1
+import textual
+PY
+  then
+    echo "$TEXTUAL_PYTHON"
+    return 0
+  fi
+  return 1
+}
 
 # Handle enable/disable/status before delegating to Python
 if [[ "$1" == "--enable" ]]; then
@@ -72,6 +92,11 @@ if [[ "$1" == "--watch" ]]; then
     echo "  ctx-profile watch [claude|codex|all]"
     exit 0
   fi
+  if ! WATCH_PYTHON="$(textual_python)"; then
+    echo "ERROR: textual is not installed. Run:"
+    echo "  ctx-profile setup --install-textual"
+    exit 1
+  fi
   SESSION_ARG=""
   SOURCE_ARG=""
   while [[ $# -gt 0 ]]; do
@@ -116,7 +141,7 @@ if [[ "$1" == "--watch" ]]; then
         ;;
     esac
   done
-  exec python3 "$PLUGIN_DIR/visualize.py" $SOURCE_ARG $SESSION_ARG
+  exec "$WATCH_PYTHON" "$PLUGIN_DIR/visualize.py" $SOURCE_ARG $SESSION_ARG
 fi
 
 # Everything else: delegate to inline Python (existing analyze logic)
