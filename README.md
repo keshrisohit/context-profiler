@@ -451,3 +451,4 @@ To add another harness:
 3. Persist with `context_profiler.storage.write_profile(session_id, events, "<source>")` or `append_event`.
 4. Add the source name to `sources` in `~/.claude/context-profiles/config.json`.
 5. Use `ctx-profile watch <source>` or `ctx-profile latest --source <source>`.
+Prinevo live-chain probe marker 2026-08-30T19:19:23Z
