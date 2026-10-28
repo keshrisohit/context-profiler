@@ -1,64 +1,61 @@
 ---
 doc_type: domain-language
 scope: context-profiler
-last_audited_at: 2026-10-28T18:57:09Z
-audited_by: scanner
+last_audited_at: 2026-10-28T21:52:36Z
+audited_by: repo-setup
 source_commit: 9771c5bd4ba0f4697e2c4af48215d31ca6b55249
 staleness_threshold_days: 30
 ---
 
-# context-profiler Domain Language
+# context-profiler — Domain Language
 
-| Term | Meaning | Aliases | Source refs |
+| Term | Meaning in this repo | Aliases | Source refs |
 |---|---|---|---|
-| Source | A harness whose sessions are profiled (`claude`, `codex`, or custom name in config `sources`) | harness | `config.py`, `README.md` |
-| Session | One harness conversation, identified by `session_id`; one logical profile | — | `storage.py` |
-| Profile | The JSONL event log for one session, possibly split into rotation parts | profile file, logical profile | `storage.py`, `README.md` |
-| Part | Overflow physical file `<stem>.part-NNNN.jsonl` of a profile | rotated part | `storage.profile_part_path` |
-| Event | Normalized record: `session_start`, `turn_start`, `context_snapshot`, `tool_call`, `compaction`, `session_end` | profile event | `README.md § Architecture` |
-| Turn | One user request span; boundary `exact` (from `turn_start`) or `estimated`/`estimated-gap` | — | `analysis.build_turns` |
-| Turn status | `compaction`, `spike`, `agent-running`, `agent-heavy`, `file-heavy`, `tool-heavy`, `normal` | — | `analysis.classify_turn` |
-| Spike | A single event whose token estimate ≥ `spike_threshold_tokens` | context spike | `analysis.compute_stats` |
-| Compaction | Context compaction/reset marker | reset | `hooks/pre-compact.py`, `analysis.build_forensics` |
-| Forensics | Contributors between compaction/reset events | compaction forensics | `analysis.build_forensics` |
-| Agent run | One observed subagent invocation with lifecycle `requested → running → completed` (or failed) | subagent, child agent | `analysis.build_agent_runs`, importers |
-| Parent / child session | Relationship between a spawning session and a spawned agent session; shown as Role `parent:N` / `child-><id>` | role | `session_index.session_relationship_label` |
-| Advice | Heuristic recommendations (`severity`, `title`, `detail`, `action`) | recommendations | `analysis.build_recommendations` |
-| Exactness | Token accounting quality: `exact`, `snapshot-based`, `estimated-byte-derived` | — | `analysis.compute_stats` |
-| Ignored paths | Profiler/transcript paths hidden from high-usage views by default | advice ignore patterns | `config.DEFAULT_CONFIG` |
-| Import cursor | Per-transcript signature preventing re-import of unchanged transcripts | — | `storage.mark_transcript_imported` |
+| Source | The agent harness a profile came from (`claude`, `codex`, or a custom configured name) | harness | `config.py` `sources`, `storage.profile_source` |
+| Session | One observed agent conversation, identified by the harness session id | profile (logical) | `storage.py`, `session_index.py` |
+| Profile | The normalized JSONL event log for one session; may span rotated parts | logical profile | `storage.profile_path`, `profile_part_paths` |
+| Part | A physical overflow file `<stem>.part-NNNN.jsonl` of a profile | rotation part | `storage.profile_part_path` |
+| Event | Normalized record: `session_start`, `turn_start`, `context_snapshot`, `tool_call`, `compaction`, `session_end` | | `hooks/*.py`, `importers/*.py` |
+| Turn | Work between user requests; explicit (`turn_start`) or inferred; classified `normal`, `spike`, `compaction`, `agent-running`, `agent-heavy`, `file-heavy`, `tool-heavy` | request | `analysis.build_turns`, `classify_turn` |
+| Spike | A tool call whose estimated tokens exceed `spike_threshold_tokens` (default 5000) | | `analysis.compute_stats` |
+| Compaction / reset | Context compaction event, or a detected drop in context tokens; analysed in forensics | | `hooks/pre-compact.py`, `analysis.build_forensics` |
+| Forensics | Top contributors since the previous compaction/reset | | `analysis.build_forensics` |
+| Agent run | One subagent invocation with lifecycle status `requested` → `running` → `completed` (or failed) | subagent, child session | `analysis.build_agent_runs`, importers |
+| Parent / child session | Session that spawned agents / session that is a spawned agent; shown as Role `parent:N` / `child-><id>` | | `session_index.session_relationship_label` |
+| Advice | Heuristic recommendations with severity, title, detail, action | recommendations | `analysis.build_recommendations` |
+| Ignored paths | Profiler/transcript paths hidden from high-usage views by default | advice ignore patterns | `config.advice_ignore_path_patterns` |
+| Exactness | Whether token counts are exact (model usage fields) or estimated (bytes/4) | approximate accounting | `analysis.compute_stats`, `formatting.estimate_tokens` |
+| Import cursor | Per-transcript signature record that lets unchanged transcripts be skipped | | `storage.mark_transcript_imported` |
+| Pin | Restricting all dashboard views to one selected session | session filter | README, `visualize.py` |
 
-Ambiguity: **session** means a harness conversation here, not an auth session. **Agent** means an observed subagent run in the profiled harness, not this tool.
+Ambiguity: "session" is used both for the harness conversation and for a profile file; "agent" means a spawned subagent run, not the top-level assistant.
 
 ## Domain Model Evidence
 
-Behavior is analytic, not transactional; light lifecycle evidence only (agent status rank).
-
 | Concept | Classification | Identity / lifecycle evidence | Owner / canonical writer | Invariant / transition | Maturity | Source refs | Ontology disposition |
 |---|---|---|---|---|---|---|---|
-| Session/Profile | entity | `session_id` → sanitized profile stem | `storage.append_event` / `write_profile` | one logical profile across parts | implemented | `storage.py`, `tests/test_storage.py` | entity |
-| Agent run | entity (lifecycle) | `raw_tool_use_id` / Codex `agent_id` | importers | status only advances by rank; requires runtime evidence | implemented | `importers/claude.py::_merge_agent_metadata`, `tests/test_*_importer.py` | entity |
-| Turn | projection/read model | ordinal within session | `analysis.build_turns` | derived, not persisted | implemented | `tests/test_analysis_turns.py` | attribute/pointer (derived) |
-| Event | value record | none beyond position | storage | append-only per profile | implemented | `storage.py` | rejected as entity (no durable identity) |
-| Source | domain concept | config name | config | — | implemented | `config.py` | entity |
+| Profile | entity | keyed by sanitized session id + source prefix | `storage.append_event` / `write_profile` | parts load in order as one logical session | implemented | `storage.py` | entity |
+| Agent run | entity | keyed by agent/child id or raw tool use id | importers | status never downgrades (`_STATUS_RANK`) | implemented | `importers/claude.py`, `importers/codex.py`, `analysis.py` | entity |
+| Event | value object | no own identity; ordered by `ts` | adapters | normalized schema before analysis | implemented | `storage.py` | attribute/pointer |
+| Turn, Spike, Advice | projection / read model | derived each read | `analysis.py` | recomputed from events | implemented | `analysis.py` | attribute/pointer |
 
-Coverage: all package modules scanned; no unscanned domain areas.
+Coverage: all package modules and importers scanned; dashboard by symbols. No further domain-discovery gaps beyond those in `architecture.md`.
 
 ```json domain-ontology
 {
   "entities": [
-    {"id": "concept:profiled-session", "type": "session", "level": "module", "aliases": ["profile", "logical profile"]},
-    {"id": "concept:agent-run", "type": "agent_run", "level": "module", "aliases": ["subagent", "child agent"]},
-    {"id": "concept:profile-source", "type": "source", "level": "module", "aliases": ["harness"]}
+    {"id": "concept:profile", "type": "profile", "level": "module", "aliases": ["logical profile"]},
+    {"id": "concept:session", "type": "session", "level": "module", "aliases": []},
+    {"id": "concept:agent-run", "type": "agent_run", "level": "module", "aliases": ["subagent"]}
   ],
   "relations": [
-    {"name": "recorded_from", "subject_type": "session", "object_type": "source", "cardinality": "state", "archetype": "attribution"},
-    {"name": "spawned_by", "subject_type": "agent_run", "object_type": "session", "cardinality": "state", "archetype": "lineage"}
+    {"name": "records", "subject_type": "profile", "object_type": "session", "cardinality": "state", "archetype": "attribution"},
+    {"name": "spawned_by", "subject_type": "session", "object_type": "session", "cardinality": "state", "archetype": "lineage"}
   ],
-  "unresolved": []
+  "unresolved": [
+    {"term": "session", "meanings": ["harness conversation", "profile file"]}
+  ]
 }
 ```
 
-Relation prose: `recorded_from` — a session's events come from exactly one source (profile stem / first event `source`). `spawned_by` — an agent run's `parent_session_id` names the session that requested it (`importers/codex.py`, `importers/claude.py`).
-
-entities=3, relations=2, unresolved=0, rejected=1 (event: no durable identity).
+Relations: `records` — a profile (subject) records exactly one session (object), e.g. `codex-<sid>.jsonl` records Codex session `<sid>`. `spawned_by` — a child session (subject) was spawned by a parent session (object), evidenced by `parent_session_id` / `child_session_id` meta in `session_index._relationship_edges`.
