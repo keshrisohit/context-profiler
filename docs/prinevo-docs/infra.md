@@ -1,7 +1,7 @@
 ---
 doc_type: infra
 scope: context-profiler
-last_audited_at: 2026-10-28T21:52:36Z
+last_audited_at: 2026-10-28T22:47:15Z
 audited_by: repo-setup
 source_commit: 9771c5bd4ba0f4697e2c4af48215d31ca6b55249
 staleness_threshold_days: 14
@@ -9,56 +9,60 @@ staleness_threshold_days: 14
 
 # context-profiler — Infra
 
-## Access Decision
+## Summary
 
-No cloud, observability, data-warehouse, or runtime control-plane surfaces were
-detected in repo evidence, and factory hints (`cloud`, `observability`, `data`,
-`infra_hints`, `iac_repos`) are empty. No live read-only access is needed; no
-setup requirements are emitted.
+No infrastructure. Context Profiler is a local workstation tool distributed as a
+git checkout plus Claude Code / Codex plugin manifests. It runs no services,
+opens no ports, and makes no network calls (no socket/HTTP client code found).
 
-## Runtime / Deployment Location
+## Declared (IaC / Deployment Sources)
 
-- Runs entirely on the operator's workstation as local processes: `ctx-profile` CLI, `visualize.py` Textual dashboard, and Claude Code hook subprocesses.
-- Distribution: git clone + `bash ./ctx-profiler.sh setup`; also packaged as a Claude plugin (`.claude-plugin/plugin.json`) and a Codex plugin (`.codex-plugin/plugin.json`), both version `0.1.0`.
-- No containers, servers, functions, clusters, queues, or databases. No network listener or outbound network call.
+| Surface | Status | Evidence |
+|---|---|---|
+| Terraform / CDK / CloudFormation / Pulumi | not present | repo file list |
+| Docker / Compose / Kubernetes / Helm | not present | repo file list |
+| CI/CD workflows | not present (no `.github/`, no other CI config) | repo file list |
+| Release / distribution | git clone + `ctx-profiler.sh setup`; plugin manifests `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` (v0.1.0) | manifests, README § Quick Install |
+| Package registry | none | no packaging metadata |
 
-## Runtime Config / Observability
+Deployment ownership: the operator installs locally. No pipeline to conflict
+with IaC, so no Deployment Ownership Gap; absence of CI is recorded as a
+verification gap in `architecture.md`.
 
-- Config source: `$HOME/.claude/context-profiles/config.json`, defaults in `context_profiler/config.py`. Details in [`runtime-setup.md`](runtime-setup.md).
-- Secrets: none.
-- Logs/metrics/traces: none emitted by the tool itself; it *is* an observability tool for agent sessions, storing its output as local JSONL profiles. Hook errors are swallowed silently.
-- Data sensitivity: profiles hold command text, prompt/output previews, and file paths from observed sessions; retention default 5 days.
+## Observed (Read-only Runtime)
 
-## Infra Ownership Map
+Not applicable — no cloud, observability, data warehouse, or control-plane
+surface is declared in the repo, and `factory.json` declares no `cloud`,
+`observability`, `data`, or `infra_hints` integrations. No live provider calls
+were made. No `SETUP_REQUIREMENT` lines are emitted because no optional
+live-evidence surface was detected.
 
-| Concern | Owner |
+## Local Footprint
+
+| Location | Purpose |
 |---|---|
-| Code | this repo |
-| Service-local IaC | none |
-| Shared/platform IaC | none |
-| Environment / network | operator workstation |
-| Security / secrets | not applicable |
-| Data | local user home directory |
-| Observability | not applicable |
-| Release | manual git clone / plugin install; no CI/CD |
+| `<home>/.claude/context-profiles/` | profile JSONL store, config, caches |
+| `<home>/.claude/settings.json` | Claude hook registrations (written by setup) |
+| `<home>/.claude/commands/`, `<home>/.codex/commands/` | slash command shims |
+| `<home>/.codex/plugins/context-profiler/` | Codex plugin copy |
+| `<home>/.local/bin/ctx-profile`, `ctx-profiler` | CLI shims |
+| `/tmp/ctx-profiler-start/` | transient tool-duration stamps |
+| Reads: `<home>/.claude/projects/`, `<home>/.codex/sessions/` | upstream transcripts |
 
-## Deployment Ownership Gap
+## Observability
 
-No CI/CD, release pipeline, or tagging evidence exists. Version is duplicated
-in `context_profiler/__init__.py` and both plugin manifests with no automated
-sync. Rollback = checkout previous commit and rerun `setup`.
+The tool is itself an observability product for agent sessions. Its own
+operation has no logging/metrics: hooks swallow all exceptions silently
+(recorded as a risk in `architecture.md`). Diagnostics: `ctx-profile doctor`.
 
-## Live Access Gap
+## Gaps
 
-Not applicable — no live surface detected.
-
-## Observability Config Gap
-
-Not applicable for deployed observability; hook failures have no diagnostic
-log (recorded as an operational risk in `architecture.md`).
+- No CI: tests are not run automatically on change.
+- No release/versioning automation; manifest versions are hand-maintained.
 
 ## Agent Work Log
 
-- Inputs checked: repo tree for Docker/Compose/IaC/CI files (none), plugin manifests, setup script, factory hints.
-- Decision: declared-only; no provider preflight needed.
+- Inputs checked: repo tree, plugin manifests, `ctx-profiler.sh`, `config.py`,
+  factory `factory.json`.
+- Decision: declared-only, no live surfaces → no setup requirements.
 - Next action: none for infra.

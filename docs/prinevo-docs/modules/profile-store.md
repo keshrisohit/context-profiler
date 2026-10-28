@@ -1,63 +1,23 @@
 ---
 doc_type: architecture
-scope: context-profiler/profile-store
-last_audited_at: 2026-10-28T18:57:09Z
-audited_by: scanner
+scope: context-profiler
+last_audited_at: 2026-10-28T22:47:15Z
+audited_by: repo-setup
 source_commit: 9771c5bd4ba0f4697e2c4af48215d31ca6b55249
 staleness_threshold_days: 30
 ---
 
-# Module: profile-store
+# Module: Profile store and config (`storage.py`, `session_index.py`, `config.py`)
 
-**Scope:** `context_profiler/storage.py`, `context_profiler/session_index.py`, `context_profiler/config.py`. **Role:** sole writer for all profiler state (profiles, cursors, session index, config, cleanup state). Separate doc because it owns the source-of-truth files, rotation/atomicity rules, and destructive cleanup safety rules.
-
-## Entry / Contracts
-
-Library API only (re-exported through `context_profiler_core.py`): `profile_path`, `append_event`, `write_profile`, `load_events`, `profile_part_paths`, `get_all_profiles`, `get_latest_session`, `profile_matches_session`, `transcript_import_current`, `mark_transcript_imported`, `cleanup_old_profiles`, `cleanup_old_codex_transcripts`, `run_auto_cleanup`, `refresh_session_index`, `load_config`, `save_config`, `ensure_config`, `is_enabled`, `configured_sources`.
-
-## State
-
-| File (under `<profile-dir>` = `$HOME/.claude/context-profiles`) | Role |
+| Dimension | Evidence |
 |---|---|
-| `<sid>.jsonl`, `codex-<sid>.jsonl` | Logical profile base part (source of truth for events) |
-| `<stem>.part-NNNN.jsonl` | Rotation overflow parts (index ≥ 2), loaded in order |
-| `config.json` | User config merged over defaults |
-| `.import-cursors.json` | Import signatures per source/transcript (rebuildable) |
-| `.session-index.json` | Per-profile summary cache for Sessions tab (rebuildable) |
-| `.cleanup-state.json` | Auto-cleanup throttle timestamp |
-
-## Writer Rules / Invariants
-
-- Session ids sanitized to `[A-Za-z0-9_-]` (`safe_session_id`); Codex stems get a `codex-` prefix; source is inferred from stem prefix, else first event `source`.
-- `append_event` appends to the last part, opening a new part when the next line would exceed `profile_max_part_bytes` (0 disables rotation).
-- `write_profile` chunks lines to the limit, skips write when content is unchanged, writes `*.tmp` then `replace`, and unlinks surplus stale parts.
-- Cursor and index files written atomically (tmp + replace).
-- Cleanup treats a logical profile as one unit: deletes base + all parts only when the newest part is older than retention. Raw Codex transcripts are deleted only via `cleanup_old_codex_transcripts`, reachable only with `--include-codex-transcripts`.
-- `run_auto_cleanup` runs at most once per `auto_cleanup_interval_hours`, min retention 1 day.
-- `_merge_config` always re-adds default `advice_ignore_path_patterns`.
-
-## Read Model
-
-`refresh_session_index` recomputes a summary only when a profile's part signatures or the spike threshold change, drops entries for deleted profiles, and derives parent/child `relationship` labels (`parent:N`, `child-><id>`) from agent event metadata.
-
-## Forbidden Shortcuts
-
-Direct file writes to `<profile-dir>` from clients/adapters; non-atomic rewrites; deleting individual rotation parts.
-
-## Dependency Direction
-
-Depends on stdlib only (`session_index` additionally on `analysis.compute_stats` and `formatting`). `PROFILE_DIR` is bound at import from `Path.home()`; not configurable (tests patch module globals).
-
-## Verification
-
-`tests/test_storage.py` (rotation, cleanup, cursors), `tests/test_session_index.py` (index invalidation, relationships).
-
-## Risks / Gaps
-
-- No file locking: concurrent `append_event` (hook) and `write_profile` (importer) on the same Claude profile can drop appended events.
-- `load_config()` called on every append.
-- Event schema has no version field.
-
-## Agent Work Log
-
-Read `storage.py` fully, `session_index.py` refresh path, `config.py` fully.
+| Purpose | Sole owner of durable profiler state under `PROFILE_DIR = ~/.claude/context-profiles` (computed from `Path.home()` at import). |
+| Source of truth | Logical profile = `<sid>.jsonl` (Claude/custom) or `codex-<sid>.jsonl` (Codex) plus ordered `*.part-NNNN.jsonl` overflow parts. `safe_session_id` replaces non `[A-Za-z0-9_-]` chars. |
+| Writers | `append_event` (append to last part; roll to next part when over `profile_max_part_bytes`, default 10,000,000); `write_profile` (chunk, write `.tmp`, atomic `replace`, delete surplus stale parts; no-op if identical); `config.save_config` / `ensure_config`; `session_index._write_index`; `run_auto_cleanup` (`.cleanup-state.json`). |
+| Readers | `load_events` (all parts in order), `get_all_profiles(sources)`, `get_latest_session(pin, sources)`, `filter_profiles_by_session`, `profile_mtime` (newest part). |
+| Projections / caches | `.session-index.json` (per-session summary, invalidated per profile by part signature), `.import-cursors.json` (transcript signatures, `IMPORT_CURSOR_VERSION = 2` invalidates older records). Both rebuildable; safe to delete. |
+| Cleanup | `cleanup_old_profiles(days, dry_run, sources)` deletes a logical profile (all parts) only when newest part is older than cutoff; `run_auto_cleanup` throttled by `auto_cleanup_interval_hours` (min 1) and `cleanup_retention_days` (min 1, default 5); `cleanup_old_codex_transcripts` only on explicit CLI flag. |
+| Config contract | `DEFAULT_CONFIG` keys: `enabled`, `spike_threshold_tokens`, `refresh_interval_seconds`, `follow_latest_session`, `sources`, `codex_sessions_dir`, `codex_import_on_refresh`, `codex_import_limit`, `claude_projects_dir`, `claude_import_on_refresh`, `claude_import_limit`, `hide_ignored_paths_by_default`, `profile_rotation_enabled`, `profile_max_part_bytes`, `auto_cleanup_enabled`, `auto_cleanup_interval_hours`, `cleanup_retention_days`, `advice_ignore_path_patterns`. User values override; default ignore patterns are always re-appended. Unreadable config → defaults. |
+| Concurrency | No file locking; hooks append while importers may rewrite Claude profiles. Atomic `replace` avoids torn files but a concurrent append between read and replace can be lost (inferred from code; not tested). |
+| Verification | `tests/test_storage.py` (session id sanitization, plain vs codex-prefixed match, auto-cleanup + throttle, rotation write/load, append rotation, cursor current/skip/version, cleanup keeps recent logical profile), `tests/test_session_index.py` (cache reuse). |
+| Change safety | Keep base+parts as one logical unit in every reader/cleanup; keep raw transcript deletion behind explicit flag (`AGENTS.md` Context Safety Rules). |
